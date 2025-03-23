@@ -1,0 +1,35 @@
+# IntelliJ IDEA project files
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Build directories
+**/target/
+**/out/
+**/build/
+
+# Compiled class files
+**/*.class
+
+# Maven files
+**/.mvn/
+pom.xml.tag
+pom.xml.releaseBackup
+release.properties
+
+# Gradle files
+**/.gradle/
+**/build/
+**/*.gradle*
+gradle-app.setting
+
+# Kafka logs
+**/*.log
+**/logs/
+**/kafka-logs/
+**/zookeeper/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
