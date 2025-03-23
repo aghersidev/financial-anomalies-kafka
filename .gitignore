@@ -33,3 +33,4 @@ gradle-app.setting
 # OS-specific files
 .DS_Store
 Thumbs.db
+"kafka-producer/src/main/resources/drivekafkaproducer-7633fc40fb1d.json" 
