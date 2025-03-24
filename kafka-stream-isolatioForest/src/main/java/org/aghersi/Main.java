@@ -12,8 +12,10 @@ import org.apache.kafka.streams.kstream.Produced;
 import smile.anomaly.IsolationForest;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class Main {
     private static final Gson gson = new Gson();
@@ -25,6 +27,9 @@ public class Main {
     private static final Map<String, List<double[]>> featureVectorsMap = new HashMap<>();
     private static final Map<String, IsolationForest> isolationForestMap = new HashMap<>();
     private static final Map<String, List<Double>> anomalyScoresMap = new HashMap<>();
+    private static final Instant startTime = Instant.now();
+    private static final AtomicLong recordCount = new AtomicLong();
+    private static final AtomicLong byteCount = new AtomicLong();
 
     public static void main(String[] args) {
         Properties props = createStreamsConfig();
@@ -35,6 +40,7 @@ public class Main {
                 .map(Main::mapToAnomalyScore)
                 .filter(Main::filterAnomalies)
                 .mapValues(Main::mapToAnomalyJson)
+                .peek(Main::logMetrics)
                 .to(KAFKA_OUTPUT_TOPIC, Produced.with(Serdes.String(), Serdes.String()));
 
         KafkaStreams streams = new KafkaStreams(builder.build(), props);
@@ -74,7 +80,7 @@ public class Main {
         featureVectorsMap.get(key).add(features);
 
         if (featureVectorsMap.get(key).size() > ROLLING_WINDOW_SIZE) {
-            featureVectorsMap.get(key).remove(0);
+            featureVectorsMap.get(key).removeFirst();
         }
 
         IsolationForest trainedForest = isolationForestMap.get(key).fit(featureVectorsMap.get(key).toArray(new double[0][]));
@@ -84,7 +90,7 @@ public class Main {
         anomalyScoresMap.get(key).add(score);
 
         if (anomalyScoresMap.get(key).size() > ROLLING_WINDOW_SIZE) {
-            anomalyScoresMap.get(key).remove(0);
+            anomalyScoresMap.get(key).removeFirst();
         }
 
         double dynamicThreshold = calculateDynamicThreshold(key);
@@ -121,6 +127,16 @@ public class Main {
         anomaly.addProperty("method", "Isolation Forest");
         anomaly.addProperty("detected_time", Instant.now().toString());
         return anomaly.toString();
+    }
+    private static void logMetrics(String key,String value) {
+        long currentRecords = recordCount.get();
+        long currentBytes = byteCount.get();
+        Duration elapsed = Duration.between(startTime, Instant.now());
+        double secondsElapsed = elapsed.toMillis() / 1000.0;
+
+        System.out.printf("Start Time: %s | Records: %d | Bytes: %d | Elapsed Time: %.2f sec | Records/sec: %.2f | Bytes/sec: %.2f%n",
+                startTime, currentRecords, currentBytes, secondsElapsed,
+                currentRecords / secondsElapsed, currentBytes / secondsElapsed);
     }
 
     private static CountDownLatch setupShutdownHook(KafkaStreams streams) {
