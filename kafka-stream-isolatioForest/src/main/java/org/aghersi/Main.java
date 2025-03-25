@@ -65,6 +65,9 @@ public class Main {
     }
 
     private static KeyValue<String, JsonObject> mapToAnomalyScore(String key, String value) {
+        recordCount.incrementAndGet();
+        byteCount.addAndGet(value.getBytes().length);
+
         JsonObject json = gson.fromJson(value, JsonObject.class);
         double adjClose = json.get("adj_close").getAsDouble();
         double volume = json.get("volume").getAsDouble();

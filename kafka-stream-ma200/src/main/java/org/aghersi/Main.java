@@ -11,8 +11,10 @@ import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.streams.kstream.Produced;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class Main {
     private static final Gson gson = new Gson();
@@ -20,6 +22,9 @@ public class Main {
     private static final String KAFKA_GROUP = "anomaly-detector";
     private static final String KAFKA_TOPIC = "augmented";
     private static final String KAFKA_OUTPUT_TOPIC = "anomalies";
+    private static final Instant startTime = Instant.now();
+    private static final AtomicLong recordCount = new AtomicLong();
+    private static final AtomicLong byteCount = new AtomicLong();
 
     public static void main(String[] args) {
         Properties props = createStreamsConfig();
@@ -49,7 +54,8 @@ public class Main {
     }
 
     private static void processAnomalies(KStream<String, String> stream) {
-        stream.groupByKey()
+        stream.peek((key, value) -> logMetrics(value))
+                .groupByKey()
                 .aggregate(
                         Accumulator::new,
                         Main::accumulateValues,
@@ -62,6 +68,12 @@ public class Main {
                 .to(KAFKA_OUTPUT_TOPIC, Produced.with(Serdes.String(), Serdes.String()));
     }
 
+    private static void logMetrics(String value) {
+        recordCount.incrementAndGet();
+        byteCount.addAndGet(value.getBytes().length);
+        long elapsedTime = Duration.between(startTime, Instant.now()).toSeconds();
+        System.out.println("Records Processed: " + recordCount.get() + ", Bytes Processed: " + byteCount.get() + ", Elapsed Time: " + elapsedTime + "s");
+    }
     private static Accumulator accumulateValues(String key, String value, Accumulator acc) {
         JsonObject json = gson.fromJson(value, JsonObject.class);
         double adjClose = json.get("adj_close").getAsDouble();

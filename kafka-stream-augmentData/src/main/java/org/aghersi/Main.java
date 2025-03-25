@@ -31,7 +31,7 @@ public class Main {
 
         try {
             streams.start();
-            latch.await(); // Wait for shutdown hook
+            latch.await();
         } catch (final Throwable e) {
             System.exit(1);
         }

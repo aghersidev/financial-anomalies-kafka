@@ -21,34 +21,24 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class Main {
-
     private static final String SERVICE_ACCOUNT_KEY_FILE = "src/main/resources/drivekafkaproducer-7633fc40fb1d.json";
     private static final String FILE_ID = "1rMtEZocRy9gx9Afhc9FIYgEzanMv_4e9";
     private static final String KAFKA_BOOTSTRAP_SERVERS = "localhost:9092";
     private static final String APPLICATION_NAME = "DriveKafkaProducer";
     private static final String KAFKA_TOPIC = "input-data";
     private static final Gson gson = new Gson();
+    private static final AtomicLong recordCount = new AtomicLong();
+    private static final AtomicLong byteCount = new AtomicLong();
 
     public static void main(String[] args) {
-        CountDownLatch latch = new CountDownLatch(1);
         try {
             Drive driveService = getDriveService();
             KafkaProducer<String, String> producer = createKafkaProducer();
-
-            Runtime.getRuntime().addShutdownHook(new Thread("streams-shutdown-hook") {
-                @Override
-                public void run() {
-                    System.out.println("Shutdown hook triggered");
-                    producer.close();
-                    latch.countDown();
-                }
-            });
 
             try (InputStream inputStream = driveService.files().get(FILE_ID).executeMediaAsInputStream();
                  BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
@@ -61,16 +51,19 @@ public class Main {
             e.printStackTrace();
         }
         System.out.println("Exiting");
+        System.out.println("Total records sent: " + recordCount.get());
+        System.out.println("Total bytes sent: " + byteCount.get());
+        producer.close();
         System.exit(0);
     }
 
     private static Drive getDriveService() throws IOException, GeneralSecurityException {
-        JsonFactory json_factory = GsonFactory.getDefaultInstance();
+        JsonFactory jsonFactory = GsonFactory.getDefaultInstance();
         HttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
         try (InputStream credentialsStream = Files.newInputStream(Paths.get(SERVICE_ACCOUNT_KEY_FILE))) {
             GoogleCredential credential = GoogleCredential.fromStream(credentialsStream)
                     .createScoped(Collections.singletonList(DriveScopes.DRIVE_READONLY));
-            return new Drive.Builder(httpTransport, json_factory, credential)
+            return new Drive.Builder(httpTransport, jsonFactory, credential)
                     .setApplicationName(APPLICATION_NAME)
                     .build();
         }
@@ -100,6 +93,8 @@ public class Main {
 
             String jsonMessage = gson.toJson(message);
             producer.send(new ProducerRecord<>(KAFKA_TOPIC, parts[7], jsonMessage));
+            recordCount.incrementAndGet();
+            byteCount.addAndGet(line.getBytes().length);
 
         } catch (Exception e) {
             System.err.println("Skipping line: " + line);
