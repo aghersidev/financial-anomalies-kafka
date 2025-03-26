@@ -21,8 +21,9 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class Main {
@@ -36,17 +37,14 @@ public class Main {
     private static final AtomicLong byteCount = new AtomicLong();
 
     public static void main(String[] args) {
+        KafkaProducer<String, String> producer = createKafkaProducer();
         try {
             Drive driveService = getDriveService();
-            KafkaProducer<String, String> producer = createKafkaProducer();
-
             try (InputStream inputStream = driveService.files().get(FILE_ID).executeMediaAsInputStream();
                  BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
-
                 reader.lines().skip(1).forEach(line -> processAndSend(line, producer));
             }
             producer.flush();
-            latch.await();
         } catch (Exception e) {
             e.printStackTrace();
         }

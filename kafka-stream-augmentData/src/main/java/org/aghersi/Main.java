@@ -50,10 +50,10 @@ public class Main {
     private static KStream<String, String> processStream(KStream<String, String> source) {
         return source.mapValues(value -> {
             JsonObject json = gson.fromJson(value, JsonObject.class);
-            double high = json.get("high").getAsDouble();
-            double low = json.get("low").getAsDouble();
-            double open = json.get("open").getAsDouble();
-            double close = json.get("close").getAsDouble();
+            double high = json.has("high") ? json.get("high").getAsDouble() : 0.0;
+            double low = json.has("low") ? json.get("low").getAsDouble() : 0.0;
+            double open = json.has("open") ? json.get("open").getAsDouble() : 0.0;
+            double close = json.has("close") ? json.get("close").getAsDouble() : 0.0;
 
             json.addProperty("up", high - Math.max(open, close));
             json.addProperty("down", Math.min(open, close) - low);

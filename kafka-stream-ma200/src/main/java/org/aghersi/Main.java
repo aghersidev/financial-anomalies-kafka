@@ -62,6 +62,7 @@ public class Main {
                         Materialized.with(Serdes.String(), new AccumulatorSerde())
                 )
                 .toStream()
+                .peek((_, acc) -> checkMetrics())
                 .filter((_, acc) -> acc.isReady())
                 .filter((_, acc) -> isAnomaly(acc))
                 .mapValues(Main::createAnomalyJson)
@@ -71,12 +72,14 @@ public class Main {
     private static void logMetrics(String value) {
         recordCount.incrementAndGet();
         byteCount.addAndGet(value.getBytes().length);
+    }
+    private static void checkMetrics() {
         long elapsedTime = Duration.between(startTime, Instant.now()).toSeconds();
         System.out.println("Records Processed: " + recordCount.get() + ", Bytes Processed: " + byteCount.get() + ", Elapsed Time: " + elapsedTime + "s");
     }
     private static Accumulator accumulateValues(String key, String value, Accumulator acc) {
         JsonObject json = gson.fromJson(value, JsonObject.class);
-        double adjClose = json.get("adj_close").getAsDouble();
+        double adjClose = json.has("adjClose") ? json.get("adjClose").getAsDouble() : 0.0;
         return acc.add(adjClose);
     }
 

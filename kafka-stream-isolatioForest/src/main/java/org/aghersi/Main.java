@@ -24,6 +24,7 @@ public class Main {
     private static final String KAFKA_TOPIC = "augmented";
     private static final String KAFKA_OUTPUT_TOPIC = "anomalies";
     private static final int ROLLING_WINDOW_SIZE = 100;
+    private static final int FIT_FREQUENCY = 100;  // Fit the model every 100 messages
     private static final Map<String, List<double[]>> featureVectorsMap = new HashMap<>();
     private static final Map<String, IsolationForest> isolationForestMap = new HashMap<>();
     private static final Map<String, List<Double>> anomalyScoresMap = new HashMap<>();
@@ -57,7 +58,7 @@ public class Main {
 
     private static Properties createStreamsConfig() {
         Properties props = new Properties();
-        props.put(StreamsConfig.APPLICATION_ID_CONFIG, KAFKA_GROUP + Instant.now());
+        props.put(StreamsConfig.APPLICATION_ID_CONFIG, KAFKA_GROUP );
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA_BOOTSTRAP_SERVERS);
         props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
         props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
@@ -69,11 +70,11 @@ public class Main {
         byteCount.addAndGet(value.getBytes().length);
 
         JsonObject json = gson.fromJson(value, JsonObject.class);
-        double adjClose = json.get("adj_close").getAsDouble();
-        double volume = json.get("volume").getAsDouble();
-        double up = json.get("up").getAsDouble();
-        double down = json.get("down").getAsDouble();
-        double size = json.get("size").getAsDouble();
+        double adjClose = json.has("adjClose") ? json.get("adjClose").getAsDouble() : 0.0;
+        double volume = json.has("volume") ? json.get("volume").getAsDouble() : 0.0;
+        double up = json.has("up") ? json.get("up").getAsDouble() : 0.0;
+        double down = json.has("down") ? json.get("down").getAsDouble() : 0.0;
+        double size = json.has("size") ? json.get("size").getAsDouble() : 0.0;
         double[] features = {adjClose, volume, up, down, size};
 
         featureVectorsMap.putIfAbsent(key, new ArrayList<>());
@@ -86,8 +87,13 @@ public class Main {
             featureVectorsMap.get(key).removeFirst();
         }
 
-        IsolationForest trainedForest = isolationForestMap.get(key).fit(featureVectorsMap.get(key).toArray(new double[0][]));
-        isolationForestMap.put(key, trainedForest);
+        if (featureVectorsMap.get(key).size() % FIT_FREQUENCY == 0) {
+            IsolationForest trainedForest = isolationForestMap.get(key).fit(featureVectorsMap.get(key).toArray(new double[0][]));
+            isolationForestMap.put(key, trainedForest);
+            System.out.println("Training for " + key);
+        } else {
+
+        }
 
         double score = isolationForestMap.get(key).score(features);
         anomalyScoresMap.get(key).add(score);
@@ -102,7 +108,6 @@ public class Main {
         result.addProperty("score", score);
         result.addProperty("adj_close", adjClose);
         result.addProperty("dynamic_threshold", dynamicThreshold);
-
         return new KeyValue<>(key, result);
     }
 
@@ -148,6 +153,10 @@ public class Main {
             @Override
             public void run() {
                 System.out.println("Shutdown hook triggered");
+                long currentRecords = recordCount.get();
+                long currentBytes = byteCount.get();
+                System.out.printf("Start Time: %s | Records: %d | Bytes: %d%n",
+                        startTime, currentRecords, currentBytes);
                 streams.close();
                 latch.countDown();
             }
