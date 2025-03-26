@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class Main {
     private static final Gson gson = new Gson();
     private static final String KAFKA_BOOTSTRAP_SERVERS = "localhost:9092";
-    private static final String KAFKA_GROUP = "anomaly-tree-detector";
+    private static final String KAFKA_GROUP = "anomaly-tree-detector6";
     private static final String KAFKA_TOPIC = "augmented";
     private static final String KAFKA_OUTPUT_TOPIC = "anomalies";
     private static final int ROLLING_WINDOW_SIZE = 100;
@@ -31,6 +31,7 @@ public class Main {
     private static final Instant startTime = Instant.now();
     private static final AtomicLong recordCount = new AtomicLong();
     private static final AtomicLong byteCount = new AtomicLong();
+    private static final Double maxDiff = Double.NEGATIVE_INFINITY;
 
     public static void main(String[] args) {
         Properties props = createStreamsConfig();
@@ -70,7 +71,8 @@ public class Main {
         byteCount.addAndGet(value.getBytes().length);
 
         JsonObject json = gson.fromJson(value, JsonObject.class);
-        double adjClose = json.has("adjClose") ? json.get("adjClose").getAsDouble() : 0.0;
+
+        double adjClose = json.has("adj_close") ? json.get("adj_close").getAsDouble() : 0.0;
         double volume = json.has("volume") ? json.get("volume").getAsDouble() : 0.0;
         double up = json.has("up") ? json.get("up").getAsDouble() : 0.0;
         double down = json.has("down") ? json.get("down").getAsDouble() : 0.0;
@@ -79,7 +81,7 @@ public class Main {
 
         featureVectorsMap.putIfAbsent(key, new ArrayList<>());
         anomalyScoresMap.putIfAbsent(key, new ArrayList<>());
-        isolationForestMap.putIfAbsent(key, new IsolationForest(100, 4));
+        isolationForestMap.putIfAbsent(key, new IsolationForest(64, 1));
 
         featureVectorsMap.get(key).add(features);
 
@@ -90,7 +92,7 @@ public class Main {
         if (featureVectorsMap.get(key).size() % FIT_FREQUENCY == 0) {
             IsolationForest trainedForest = isolationForestMap.get(key).fit(featureVectorsMap.get(key).toArray(new double[0][]));
             isolationForestMap.put(key, trainedForest);
-            System.out.println("Training for " + key);
+            //System.out.println("Training for " + key);
         } else {
 
         }
@@ -108,14 +110,27 @@ public class Main {
         result.addProperty("score", score);
         result.addProperty("adj_close", adjClose);
         result.addProperty("dynamic_threshold", dynamicThreshold);
+        System.out.println(result);
         return new KeyValue<>(key, result);
     }
 
     private static double calculateDynamicThreshold(String key) {
         double dynamicThreshold = 0;
         if (anomalyScoresMap.get(key).size() >= 2) {
-            double mean = anomalyScoresMap.get(key).stream().mapToDouble(Double::doubleValue).average().orElse(0);
-            double stdDev = Math.sqrt(anomalyScoresMap.get(key).stream().mapToDouble(s -> Math.pow(s - mean, 2)).average().orElse(0));
+
+            anomalyScoresMap.get(key).removeIf(score -> Double.isNaN(score));
+            double mean = anomalyScoresMap.get(key).stream()
+                    .mapToDouble(Double::doubleValue)
+                    .average()
+                    .orElse(0);System.out.println(anomalyScoresMap.get(key).toString());
+            System.out.println(mean);
+            anomalyScoresMap.get(key).removeIf(score -> Double.isNaN(score));
+            double stdDev = Math.sqrt(
+                    anomalyScoresMap.get(key).stream()
+                            .mapToDouble(s -> Math.pow(s - mean, 2))
+                            .average()
+                            .orElse(0));
+                    System.out.println(stdDev);
             dynamicThreshold = mean + 2 * stdDev;
         }
         return dynamicThreshold;
@@ -124,6 +139,7 @@ public class Main {
     private static boolean filterAnomalies(String key, JsonObject result) {
         double score = result.get("score").getAsDouble();
         double dynamicThreshold = result.get("dynamic_threshold").getAsDouble();
+        double diff = score - dynamicThreshold;
         return score > dynamicThreshold;
     }
 
@@ -142,8 +158,8 @@ public class Main {
         Duration elapsed = Duration.between(startTime, Instant.now());
         double secondsElapsed = elapsed.toMillis() / 1000.0;
 
-        System.out.printf("Start Time: %s | Records: %d | Bytes: %d | Elapsed Time: %.2f sec | Records/sec: %.2f | Bytes/sec: %.2f%n",
-                startTime, currentRecords, currentBytes, secondsElapsed,
+        System.out.printf("Records: %d | Bytes: %d | Elapsed Time: %.2f sec | Records/sec: %.2f | Bytes/sec: %.2f%n",
+                currentRecords, currentBytes, secondsElapsed,
                 currentRecords / secondsElapsed, currentBytes / secondsElapsed);
     }
 

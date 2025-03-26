@@ -79,7 +79,7 @@ public class Main {
     }
     private static Accumulator accumulateValues(String key, String value, Accumulator acc) {
         JsonObject json = gson.fromJson(value, JsonObject.class);
-        double adjClose = json.has("adjClose") ? json.get("adjClose").getAsDouble() : 0.0;
+        double adjClose = json.has("adj_close") ? json.get("adj_close").getAsDouble() : 0.0;
         return acc.add(adjClose);
     }
 
