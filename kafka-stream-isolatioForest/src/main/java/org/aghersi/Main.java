@@ -20,18 +20,18 @@ import java.util.concurrent.atomic.AtomicLong;
 public class Main {
     private static final Gson gson = new Gson();
     private static final String KAFKA_BOOTSTRAP_SERVERS = "localhost:9092";
-    private static final String KAFKA_GROUP = "anomaly-tree-detector6";
+    private static final String KAFKA_GROUP = "anomaly-tree-detector";
     private static final String KAFKA_TOPIC = "augmented";
     private static final String KAFKA_OUTPUT_TOPIC = "anomalies";
     private static final int ROLLING_WINDOW_SIZE = 100;
-    private static final int FIT_FREQUENCY = 100;  // Fit the model every 100 messages
+    private static final int FIT_FREQUENCY = 1000;  // Fit the model every 100 messages
     private static final Map<String, List<double[]>> featureVectorsMap = new HashMap<>();
     private static final Map<String, IsolationForest> isolationForestMap = new HashMap<>();
     private static final Map<String, List<Double>> anomalyScoresMap = new HashMap<>();
     private static final Instant startTime = Instant.now();
     private static final AtomicLong recordCount = new AtomicLong();
     private static final AtomicLong byteCount = new AtomicLong();
-    private static final Double maxDiff = Double.NEGATIVE_INFINITY;
+    private static final AtomicLong cantAnomalies = new AtomicLong();
 
     public static void main(String[] args) {
         Properties props = createStreamsConfig();
@@ -81,27 +81,37 @@ public class Main {
 
         featureVectorsMap.putIfAbsent(key, new ArrayList<>());
         anomalyScoresMap.putIfAbsent(key, new ArrayList<>());
-        isolationForestMap.putIfAbsent(key, new IsolationForest(64, 1));
+        isolationForestMap.putIfAbsent(key, new IsolationForest(30, 1));
 
-        featureVectorsMap.get(key).add(features);
+        List<double[]> keyFeaturesList = featureVectorsMap.get(key);
+        System.out.println("Is it adding: " + featureVectorsMap.get(key).size());
+        keyFeaturesList.add(features);
+        System.out.println("Is it adding: " + featureVectorsMap.get(key).size());
 
-        if (featureVectorsMap.get(key).size() > ROLLING_WINDOW_SIZE) {
-            featureVectorsMap.get(key).removeFirst();
-        }
-
-        if (featureVectorsMap.get(key).size() % FIT_FREQUENCY == 0) {
-            IsolationForest trainedForest = isolationForestMap.get(key).fit(featureVectorsMap.get(key).toArray(new double[0][]));
+        if (keyFeaturesList.size() > ROLLING_WINDOW_SIZE) {
+            //keyFeaturesList.removeFirst();
+            IsolationForest trainedForest = isolationForestMap.get(key).fit(keyFeaturesList.toArray(new double[0][]));
+            System.out.println("Trained with n trees: " + trainedForest.size());
             isolationForestMap.put(key, trainedForest);
-            //System.out.println("Training for " + key);
+            keyFeaturesList.clear();
+        }
+        System.out.println("After check rolling: " + featureVectorsMap.get(key).size());
+
+        if (keyFeaturesList.size() % FIT_FREQUENCY == 0) {
+
         } else {
 
         }
 
         double score = isolationForestMap.get(key).score(features);
-        anomalyScoresMap.get(key).add(score);
+        List<Double> scores = anomalyScoresMap.get(key);
+        System.out.println(score);
+        if (!Double.isNaN(score)) {
+            scores.add(score);
+        }
 
-        if (anomalyScoresMap.get(key).size() > ROLLING_WINDOW_SIZE) {
-            anomalyScoresMap.get(key).removeFirst();
+        if (scores.size() > ROLLING_WINDOW_SIZE) {
+            scores.removeFirst();
         }
 
         double dynamicThreshold = calculateDynamicThreshold(key);
@@ -110,6 +120,9 @@ public class Main {
         result.addProperty("score", score);
         result.addProperty("adj_close", adjClose);
         result.addProperty("dynamic_threshold", dynamicThreshold);
+        System.out.println("How many tress: " + isolationForestMap.get(key).size());
+        System.out.println("How many features arrays: " + keyFeaturesList.size());
+
         System.out.println(result);
         return new KeyValue<>(key, result);
     }
@@ -117,20 +130,18 @@ public class Main {
     private static double calculateDynamicThreshold(String key) {
         double dynamicThreshold = 0;
         if (anomalyScoresMap.get(key).size() >= 2) {
-
             anomalyScoresMap.get(key).removeIf(score -> Double.isNaN(score));
             double mean = anomalyScoresMap.get(key).stream()
                     .mapToDouble(Double::doubleValue)
                     .average()
-                    .orElse(0);System.out.println(anomalyScoresMap.get(key).toString());
-            System.out.println(mean);
-            anomalyScoresMap.get(key).removeIf(score -> Double.isNaN(score));
+                    .orElse(0);
             double stdDev = Math.sqrt(
                     anomalyScoresMap.get(key).stream()
                             .mapToDouble(s -> Math.pow(s - mean, 2))
                             .average()
                             .orElse(0));
-                    System.out.println(stdDev);
+            System.out.println(mean);
+            System.out.println(stdDev);
             dynamicThreshold = mean + 2 * stdDev;
         }
         return dynamicThreshold;
@@ -144,6 +155,7 @@ public class Main {
     }
 
     private static String mapToAnomalyJson(String key, JsonObject result) {
+        cantAnomalies.incrementAndGet();
         JsonObject json = gson.fromJson(result, JsonObject.class);
         JsonObject anomaly = new JsonObject();
         anomaly.addProperty("date", Instant.now().toString());
@@ -155,11 +167,13 @@ public class Main {
     private static void logMetrics(String key,String value) {
         long currentRecords = recordCount.get();
         long currentBytes = byteCount.get();
+        long currentAnomalies = cantAnomalies.get();
+
         Duration elapsed = Duration.between(startTime, Instant.now());
         double secondsElapsed = elapsed.toMillis() / 1000.0;
 
-        System.out.printf("Records: %d | Bytes: %d | Elapsed Time: %.2f sec | Records/sec: %.2f | Bytes/sec: %.2f%n",
-                currentRecords, currentBytes, secondsElapsed,
+        System.out.printf("Records: %d | Bytes: %d | Anomalies: %d | Elapsed Time: %.2f sec | Records/sec: %.2f | Bytes/sec: %.2f%n",
+                currentRecords, currentBytes, currentAnomalies, secondsElapsed,
                 currentRecords / secondsElapsed, currentBytes / secondsElapsed);
     }
 
