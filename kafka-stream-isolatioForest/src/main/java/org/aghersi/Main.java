@@ -11,8 +11,8 @@ import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Produced;
 import smile.anomaly.IsolationForest;
 
-import java.time.Instant;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicLong;
@@ -24,7 +24,6 @@ public class Main {
     private static final String KAFKA_TOPIC = "augmented";
     private static final String KAFKA_OUTPUT_TOPIC = "anomalies";
     private static final int ROLLING_WINDOW_SIZE = 100;
-    private static final int FIT_FREQUENCY = 1000;  // Fit the model every 100 messages
     private static final Map<String, List<double[]>> featureVectorsMap = new HashMap<>();
     private static final Map<String, IsolationForest> isolationForestMap = new HashMap<>();
     private static final Map<String, List<Double>> anomalyScoresMap = new HashMap<>();
@@ -59,7 +58,7 @@ public class Main {
 
     private static Properties createStreamsConfig() {
         Properties props = new Properties();
-        props.put(StreamsConfig.APPLICATION_ID_CONFIG, KAFKA_GROUP );
+        props.put(StreamsConfig.APPLICATION_ID_CONFIG, KAFKA_GROUP);
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA_BOOTSTRAP_SERVERS);
         props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
         props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
@@ -84,28 +83,16 @@ public class Main {
         isolationForestMap.putIfAbsent(key, new IsolationForest(30, 1));
 
         List<double[]> keyFeaturesList = featureVectorsMap.get(key);
-        System.out.println("Is it adding: " + featureVectorsMap.get(key).size());
         keyFeaturesList.add(features);
-        System.out.println("Is it adding: " + featureVectorsMap.get(key).size());
 
         if (keyFeaturesList.size() > ROLLING_WINDOW_SIZE) {
-            //keyFeaturesList.removeFirst();
             IsolationForest trainedForest = isolationForestMap.get(key).fit(keyFeaturesList.toArray(new double[0][]));
-            System.out.println("Trained with n trees: " + trainedForest.size());
             isolationForestMap.put(key, trainedForest);
             keyFeaturesList.clear();
-        }
-        System.out.println("After check rolling: " + featureVectorsMap.get(key).size());
-
-        if (keyFeaturesList.size() % FIT_FREQUENCY == 0) {
-
-        } else {
-
         }
 
         double score = isolationForestMap.get(key).score(features);
         List<Double> scores = anomalyScoresMap.get(key);
-        System.out.println(score);
         if (!Double.isNaN(score)) {
             scores.add(score);
         }
@@ -120,10 +107,6 @@ public class Main {
         result.addProperty("score", score);
         result.addProperty("adj_close", adjClose);
         result.addProperty("dynamic_threshold", dynamicThreshold);
-        System.out.println("How many tress: " + isolationForestMap.get(key).size());
-        System.out.println("How many features arrays: " + keyFeaturesList.size());
-
-        System.out.println(result);
         return new KeyValue<>(key, result);
     }
 
@@ -140,8 +123,6 @@ public class Main {
                             .mapToDouble(s -> Math.pow(s - mean, 2))
                             .average()
                             .orElse(0));
-            System.out.println(mean);
-            System.out.println(stdDev);
             dynamicThreshold = mean + 2 * stdDev;
         }
         return dynamicThreshold;
@@ -150,7 +131,6 @@ public class Main {
     private static boolean filterAnomalies(String key, JsonObject result) {
         double score = result.get("score").getAsDouble();
         double dynamicThreshold = result.get("dynamic_threshold").getAsDouble();
-        double diff = score - dynamicThreshold;
         return score > dynamicThreshold;
     }
 
@@ -164,7 +144,8 @@ public class Main {
         anomaly.addProperty("detected_time", Instant.now().toString());
         return anomaly.toString();
     }
-    private static void logMetrics(String key,String value) {
+
+    private static void logMetrics(String key, String value) {
         long currentRecords = recordCount.get();
         long currentBytes = byteCount.get();
         long currentAnomalies = cantAnomalies.get();
