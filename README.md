@@ -3,8 +3,8 @@
 
 This repository contains a set of five Kafka-based Java applications that work together as a pipeline to process stock market data and send anomalies to RabbitMQ. The steps of the pipeline are as follows:
 
-1. **Kafka Producer**: Reads data from Google Drive and sends it to a Kafka topic.
-2. **Augment Data**: Augments the data by adding additional properties.
+1. **Kafka Producer**: Reads data from Google Drive and sends it to a Kafka topic. You can replace it with your own data.
+2. **Augment Data**: Augments the data by adding additional properties like size of body and shadows.
 3. **MA200**: Calculates the 200-period Moving Average (MA200) to identify anomalies in the stock market candles.
 4. **Isolation Forest**: Uses the Smile library's Isolation Forest class to detect anomalies in the stock market candles.
 5. **Kafka Consumer**: Reads anomalies from the Kafka topic and sends them to RabbitMQ.
@@ -14,7 +14,8 @@ This repository contains a set of five Kafka-based Java applications that work t
 To clone the repository, run the following command:
 
 ```bash
-git clone https://github.com/your-username/kafka-pipeline.git
+mkdir kafka-pipeline
+git clone https://github.com/aghersidev/financial-anomalies-kafka.git
 cd kafka-pipeline
 ```
 
@@ -28,7 +29,7 @@ This project uses Kafka without Zookeeper (via Kraft mode). To get Kafka running
 2. **Start Kafka in Kraft Mode**:
    Kafka can run without Zookeeper in Kraft mode, which is simpler for local setups:
    ```bash
-   bin/kafka-server-start.sh config/kraft-server.properties
+   bin[/windows]/kafka-server-start.sh config/kraft-server.properties
    ```
 
 3. **Create Topics**:
@@ -56,16 +57,6 @@ Each application is located in its respective directory within the project. Foll
      - **Augment Data**: Processes and augments the data.
      - **MA200 and Isolation Forest**: These run in parallel and detect anomalies.
      - **Consumer**: Sends the anomalies to RabbitMQ.
-
-   Use the following commands to run each application:
-
-   ```bash
-   mvn exec:java -Dexec.mainClass="org.aghersi.kafka.producer.KafkaProducerApp"
-   mvn exec:java -Dexec.mainClass="org.aghersi.kafka.augmentData.AugmentDataApp"
-   mvn exec:java -Dexec.mainClass="org.aghersi.kafka.streams.MA200App"
-   mvn exec:java -Dexec.mainClass="org.aghersi.kafka.streams.IsolationForestApp"
-   mvn exec:java -Dexec.mainClass="org.aghersi.kafka.consumer.KafkaConsumerApp"
-   ```
 
    Make sure Kafka is running before starting the producer.
 
@@ -100,7 +91,7 @@ Once the anomaly data is in RabbitMQ, it can be consumed by a Node.js applicatio
 
        ch.consume(queue, function (msg) {
          console.log('Received:', msg.content.toString());
-         // Process data and post to Social Networks or PostgreSQL
+         // Process data here
        }, { noAck: true });
      });
    });
