@@ -20,12 +20,17 @@ import java.util.concurrent.atomic.AtomicLong;
 public class Main {
     private static final Gson gson = new Gson();
     private static final String KAFKA_BOOTSTRAP_SERVERS = "localhost:9092";
-    private static final String KAFKA_GROUP = "anomaly-tree-detector";
+    private static final String KAFKA_GROUP = "anomaly-tree-detector46";
     private static final String KAFKA_TOPIC = "augmented";
     private static final String KAFKA_OUTPUT_TOPIC = "anomalies";
     private static final int ROLLING_WINDOW_SIZE = 100;
     private static final Map<String, List<double[]>> featureVectorsMap = new HashMap<>();
-    private static final Map<String, IsolationForest> isolationForestMap = new HashMap<>();
+    private static final Map<String, IsolationForest> isolationForestMap = new LinkedHashMap<>(256, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, IsolationForest> eldest) {
+            return size() > 200;
+        }
+    };
     private static final Map<String, List<Double>> anomalyScoresMap = new HashMap<>();
     private static final Instant startTime = Instant.now();
     private static final AtomicLong recordCount = new AtomicLong();
@@ -86,34 +91,42 @@ public class Main {
         keyFeaturesList.add(features);
 
         if (keyFeaturesList.size() > ROLLING_WINDOW_SIZE) {
-            IsolationForest trainedForest = isolationForestMap.get(key).fit(keyFeaturesList.toArray(new double[0][]));
+            IsolationForest trainedForest = IsolationForest.fit(keyFeaturesList.toArray(new double[0][]));
             isolationForestMap.put(key, trainedForest);
             keyFeaturesList.clear();
         }
-
         double score = isolationForestMap.get(key).score(features);
-        List<Double> scores = anomalyScoresMap.get(key);
         if (!Double.isNaN(score)) {
+            List<Double> scores = anomalyScoresMap.get(key);
             scores.add(score);
+            if (scores.size() > 2 * ROLLING_WINDOW_SIZE) {
+                anomalyScoresMap.put(key, scores.subList(ROLLING_WINDOW_SIZE, 2 * ROLLING_WINDOW_SIZE));
+            }
         }
-
-        if (scores.size() > ROLLING_WINDOW_SIZE) {
-            scores.removeFirst();
-        }
-
-        double dynamicThreshold = calculateDynamicThreshold(key);
 
         JsonObject result = new JsonObject();
         result.addProperty("score", score);
         result.addProperty("adj_close", adjClose);
-        result.addProperty("dynamic_threshold", dynamicThreshold);
+        result.addProperty("dynamic_threshold", calculateDynamicThreshold(key));
         return new KeyValue<>(key, result);
+    }
+
+    private static double[] getFeatures(String value) {
+        recordCount.incrementAndGet();
+        byteCount.addAndGet(value.getBytes().length);
+        JsonObject json = gson.fromJson(value, JsonObject.class);
+        double adjClose = json.has("adj_close") ? json.get("adj_close").getAsDouble() : 0.0;
+        double volume = json.has("volume") ? json.get("volume").getAsDouble() : 0.0;
+        double up = json.has("up") ? json.get("up").getAsDouble() : 0.0;
+        double down = json.has("down") ? json.get("down").getAsDouble() : 0.0;
+        double size = json.has("size") ? json.get("size").getAsDouble() : 0.0;
+        double[] features = {adjClose, volume, up, down, size};
+        return features;
     }
 
     private static double calculateDynamicThreshold(String key) {
         double dynamicThreshold = 0;
         if (anomalyScoresMap.get(key).size() >= 2) {
-            anomalyScoresMap.get(key).removeIf(score -> Double.isNaN(score));
             double mean = anomalyScoresMap.get(key).stream()
                     .mapToDouble(Double::doubleValue)
                     .average()
@@ -123,9 +136,9 @@ public class Main {
                             .mapToDouble(s -> Math.pow(s - mean, 2))
                             .average()
                             .orElse(0));
-            dynamicThreshold = mean + 2 * stdDev;
+            return mean + 2 * stdDev;
         }
-        return dynamicThreshold;
+        return 0;
     }
 
     private static boolean filterAnomalies(String key, JsonObject result) {
@@ -147,9 +160,28 @@ public class Main {
 
     private static void logMetrics(String key, String value) {
         long currentRecords = recordCount.get();
+        boolean val = currentRecords > 1000000 && currentRecords < 1001000;
+        boolean val2 = currentRecords > 2000000 && currentRecords < 2001000;
+        boolean val3 = currentRecords > 3000000 && currentRecords < 3001000;
+        boolean val4 = currentRecords > 4000000 && currentRecords < 4001000;
+        boolean val5 = currentRecords > 5000000 && currentRecords < 5001000;
+        boolean val6 = currentRecords > 6000000 && currentRecords < 6001000;
+        boolean val7 = currentRecords > 7000000 && currentRecords < 7001000;
+        boolean val8 = currentRecords > 8000000 && currentRecords < 8001000;
+        boolean val9 = currentRecords > 9000000 && currentRecords < 9001000;
+        boolean val91 = currentRecords > 9250000 && currentRecords < 9251000;
+        boolean val92 = currentRecords > 9500000 && currentRecords < 9600000;
+        boolean val93 = currentRecords > 9750000 && currentRecords < 9751000;
+        boolean val10 = currentRecords > 10250000 && currentRecords < 10251000;
+        boolean val11 = currentRecords > 10500000 && currentRecords < 10501000;
+        boolean val12 = currentRecords > 10750000 && currentRecords < 10751000;
+        boolean val13 = currentRecords > 11000000;
+        boolean val0 = val || val2 || val3 || val4 || val5 || val6 || val7 || val8 || val9 || val10 || val11 || val12 || val13 || val91 || val93 || val92;
+        if (!val0) {
+            return;
+        }
         long currentBytes = byteCount.get();
         long currentAnomalies = cantAnomalies.get();
-
         Duration elapsed = Duration.between(startTime, Instant.now());
         double secondsElapsed = elapsed.toMillis() / 1000.0;
 
